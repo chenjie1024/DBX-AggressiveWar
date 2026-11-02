@@ -113,7 +113,12 @@ dbx-plugin install ./com.gongfawar.game-0.5.0-windows-x64.dbxp
 
 ### 从源码构建
 
-需要 Node 20+、Rust stable、`@dbx-app/plugin-cli`，以及本游戏的源码仓库（`aggressiveWar`，未公开）：
+需要 Node 20+、Rust stable、`@dbx-app/plugin-cli`，以及游戏源码仓库（已开源）：
+
+```bash
+git clone https://github.com/chenjie1024/aggressiveWar.git
+```
+
 
 ```bash
 # 1) 构建游戏 UI（同时把 UI 嵌进 sidecar）
@@ -222,6 +227,13 @@ cargo test --manifest-path backend/Cargo.toml
 ```
 
 ---
+
+## 相关仓库
+
+| 仓库 | 是什么 |
+|---|---|
+| [aggressiveWar](https://github.com/chenjie1024/aggressiveWar) | 游戏源码：核心逻辑（纯 TS）、Canvas 前端、Node 服务端、Android 外壳 |
+| [DBX-AggressiveWar](https://github.com/chenjie1024/DBX-AggressiveWar) | 本插件：适配层 + Rust sidecar + CI |
 
 ## 许可证
 
