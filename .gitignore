@@ -1,5 +1,4 @@
 /dist/
-/ui/
 /.dbx-dev/
 node_modules/
 /backend/target/
@@ -9,3 +8,6 @@ target/
 *.tmp
 *.bak
 .DS_Store
+
+# 说明：ui/ 是构建产物，但必须进仓库 —— CI 没有游戏仓库可克隆
+# （游戏源码不公开），后端 assets.rs 也由它生成。
