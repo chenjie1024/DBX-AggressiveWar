@@ -1,0 +1,25 @@
+name: Release DBX plugin
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    # 可复用工作流必须指向真实存在的 ref（`@plugin-sdk-v1` 在 t8y2/dbx 里不存在）。
+    uses: t8y2/dbx/.github/workflows/plugin-release-reusable.yml@v0.6.58
+    with:
+      release-tag: ${{ github.event.release.tag_name }}
+      package-command: dbx-plugin package .
+      package-path: dist/*.dbxp
+      metadata-path: dist/*.artifact.json
+      plugin-cli-version: 0.1.9
+      # 本项目有 Rust sidecar：必须装工具链，否则 package 步骤直接失败。
+      rust-toolchain: stable
+      # 只构建 Windows：sidecar 是本机服务（监听端口 + 托管页面），
+      # 默认矩阵产出的 darwin/linux 包会在商店里被当成可用版本发出去。
+      build-matrix: >-
+        {"include":[{"runner":"windows-2022","target":"windows-x64"}]}

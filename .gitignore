@@ -1,0 +1,11 @@
+/dist/
+/ui/
+/.dbx-dev/
+node_modules/
+/backend/target/
+target/
+**/*.rs.bk
+*.log
+*.tmp
+*.bak
+.DS_Store

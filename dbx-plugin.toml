@@ -1,0 +1,11 @@
+schema_version = 1
+
+# 前端产出游戏 UI；Rust sidecar 负责「本地局域网联机」：
+# 托管页面（手机打开即可加入）+ 锁步联机中继。
+[backend]
+language = "rust"
+directory = "backend"
+binary = "dbx-plugin-gongfawar"
+
+[package]
+include = ["assets", "ui"]
