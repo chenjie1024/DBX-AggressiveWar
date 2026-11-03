@@ -77,7 +77,17 @@ function makeEnv({ stored = null, withStorage = true } = {}) {
     head: stubNode(),
     title: ""
   };
-  const sandbox = { window, document, console, setTimeout, clearTimeout, Promise, navigator: {} };
+  const getComputedStyle = () => ({
+    font: "12px monospace",
+    letterSpacing: "normal",
+    lineHeight: "16px",
+    paddingTop: "0px",
+    paddingRight: "0px",
+    paddingBottom: "0px",
+    paddingLeft: "0px",
+    tabSize: "4"
+  });
+  const sandbox = { window, document, console, setTimeout, clearTimeout, Promise, navigator: {}, getComputedStyle };
   sandbox.globalThis = sandbox;
   vm.createContext(sandbox);
   vm.runInContext(shimSource, sandbox);

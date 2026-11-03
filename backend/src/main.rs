@@ -163,12 +163,13 @@ impl Plugin {
         let state = lan()
             .lock()
             .map_err(|_| PluginError::new(-32000, "联机状态不可用"))?;
-        let messages = state
+        let (messages, connected) = state
             .hub
             .lock()
             .map_err(|_| PluginError::new(-32000, "联机状态不可用"))?
             .poll(id);
-        Ok(json!({ "messages": messages }))
+        // connected=false 表示中继已经把这条连接断开（积压溢出），UI 应当关掉 socket
+        Ok(json!({ "messages": messages, "connected": connected }))
     }
 
     fn lan_ws_close(&self, params: &Value) -> Result<Value, PluginError> {

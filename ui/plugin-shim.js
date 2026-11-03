@@ -300,6 +300,9 @@
           for (var i = 0; i < messages.length; i += 1) {
             if (self.onmessage) self.onmessage({ data: messages[i] });
           }
+          // 中继说连接没了（消息积压溢出）：把最后一批消息交给游戏后关掉 socket，
+          // 让上层显示"与中继断开"，而不是一直空转却收不到任何指令。
+          if (result && result.connected === false) self.close();
         })
         .catch(function () {
           return null;
@@ -374,7 +377,6 @@
 
   var COVER_KEY_SETTING = "gongfa-war.bossKey";
   var COVER_BLUR_SETTING = "gongfa-war.hideOnBlur";
-  var COVER_KEEP_ON_FOCUS_SETTING = "gongfa-war.keepCoverOnFocus";
   var DEFAULT_BOSS_KEY = "ctrl+shift+z";
   var coverEl = null;
   var coverActive = false;
@@ -424,11 +426,6 @@
 
   function hideOnBlurEnabled() {
     return readPref(COVER_BLUR_SETTING, "1") !== "0";
-  }
-
-  /** 切回 DBX 时是否继续保持伪装（默认不保持：回来就露出游戏）。 */
-  function keepCoverOnFocusEnabled() {
-    return readPref(COVER_KEEP_ON_FOCUS_SETTING, "0") === "1";
   }
 
   /** 把按键事件转成 "ctrl+shift+z" 这种字符串；不成组合键就返回 null。 */
@@ -508,12 +505,16 @@
     "#dbx-cover .cv-gutter{padding:10px 8px 10px 12px;text-align:right;color:#3b414d;white-space:pre;",
     "font:12.5px/1.7 ui-monospace,Consolas,'Cascadia Mono',monospace;user-select:none;overflow:hidden;min-width:34px}",
     "#dbx-cover .cv-codebody{position:relative;flex:1;min-width:0}",
-    "#dbx-cover .cv-hl{position:absolute;inset:0;margin:0;padding:10px 14px;overflow:hidden;white-space:pre;",
-    "font:12.5px/1.7 ui-monospace,Consolas,'Cascadia Mono',monospace;color:#cfd3da;pointer-events:none;tab-size:2}",
+    "#dbx-cover .cv-hl{position:absolute;inset:0;margin:0;padding:10px 14px;overflow:hidden;",
+    "white-space:pre-wrap;word-break:break-word;font:12.5px/1.7 ui-monospace,Consolas,'Cascadia Mono',monospace;",
+    "color:#cfd3da;pointer-events:none;tab-size:2}",
+    // 软换行：高亮层与输入层用同一套换行规则，并隐藏 textarea 滚动条，让两边内容宽度完全一致。
     "#dbx-cover .cv-sql{position:absolute;inset:0;width:100%;height:100%;flex:none;box-sizing:border-box;resize:none;border:none;",
-    "outline:none;background:transparent;color:transparent;caret-color:#e5e7eb;margin:0;white-space:pre;overflow:auto;",
+    "outline:none;background:transparent;color:transparent;caret-color:#f8fafc;margin:0;",
+    "white-space:pre-wrap;word-break:break-word;overflow-y:auto;overflow-x:hidden;scrollbar-width:none;",
     "padding:10px 14px;font:12.5px/1.7 ui-monospace,Consolas,'Cascadia Mono',monospace;tab-size:2}",
     "#dbx-cover .cv-sql::selection{background:#264f78}",
+    "#dbx-cover .cv-sql::-webkit-scrollbar{width:0;height:0}",
     "#dbx-cover .cv-hl .k{color:#7dd3fc}",
     "#dbx-cover .cv-hl .s{color:#86efac}",
     "#dbx-cover .cv-hl .c{color:#6b7280}",
@@ -538,8 +539,6 @@
     "#dbx-cover .cv-key{width:130px;background:#1b1e24;color:#e4e4e7;border:1px solid #2f333c;border-radius:5px;padding:4px 7px;font:12px ui-monospace,Consolas,monospace;text-align:center;outline:none}",
     "#dbx-cover .cv-key:focus{border-color:#3b82f6}",
     "#dbx-cover .cv-hint{color:#71717a;font-size:11px;line-height:1.5;margin:-4px 0 10px}",
-    "#dbx-cover .cv-play{width:100%;padding:7px;border-radius:7px;border:1px solid #2563eb;background:#1d4ed8;color:#fff;font-size:12.5px;cursor:pointer}",
-    "#dbx-cover .cv-play:hover{background:#2563eb}",
     "#dbx-cover .cv-check{display:flex;align-items:center;gap:7px;font-size:12px;color:#a1a1aa;margin-bottom:8px}",
     "#dbx-cover .cv-check input{accent-color:#3b82f6}"
   ].join("");
@@ -638,9 +637,8 @@
       '<div class="cv-row"><span>老板键</span><button class="cv-key" id="cv-key" type="button"></button></div>' +
       '<div class="cv-hint" id="cv-key-hint">点一下，然后按下组合键（Esc 取消）。</div>' +
       '<label class="cv-check"><input type="checkbox" id="cv-blur" /> 离开工作台时自动显示本界面</label>' +
-      '<label class="cv-check"><input type="checkbox" id="cv-keep" /> 切回 DBX 时也保持伪装</label>' +
       '<label class="cv-check"><input type="checkbox" id="cv-start" /> 打开插件时先显示本界面</label>' +
-      '<button class="cv-play" type="button" id="cv-play">进入游戏</button>';
+      '<div class="cv-hint" id="cv-mode-hint">进入游戏 / 回到本界面：只有老板键（当前 <b id="cv-mode-key"></b>）。</div>';
 
     root.appendChild(status);
     root.appendChild(editor);
@@ -727,14 +725,37 @@
       syncCodeScroll();
     }
 
+    /** 把输入层的排版参数抄给高亮层：字体、内距、制表位只要有一点不一致，
+     * 光标就会画在字的旁边而不是字后面。这里在运行时对齐一次，CSS 改了也不会错位。 */
+    function syncEditorMetrics() {
+      var cs = getComputedStyle(sql);
+      hlEl.style.font = cs.font;
+      hlEl.style.letterSpacing = cs.letterSpacing;
+      hlEl.style.lineHeight = cs.lineHeight;
+      hlEl.style.paddingTop = cs.paddingTop;
+      hlEl.style.paddingRight = cs.paddingRight;
+      hlEl.style.paddingBottom = cs.paddingBottom;
+      hlEl.style.paddingLeft = cs.paddingLeft;
+      hlEl.style.tabSize = cs.tabSize;
+      gutterEl.style.font = cs.font;
+      gutterEl.style.lineHeight = cs.lineHeight;
+      gutterEl.style.paddingTop = cs.paddingTop;
+      gutterEl.style.paddingBottom = cs.paddingBottom;
+    }
+
     function syncCodeScroll() {
       hlEl.scrollTop = sql.scrollTop;
-      hlEl.scrollLeft = sql.scrollLeft;
+      // 软换行后不会横向滚动，只同步纵向即可
       gutterEl.scrollTop = sql.scrollTop;
     }
 
+    syncEditorMetrics();
     sql.addEventListener("input", renderCode);
     sql.addEventListener("scroll", syncCodeScroll);
+    window.addEventListener("resize", function () {
+      syncEditorMetrics();
+      renderCode();
+    });
     sql.addEventListener("keydown", function (event) {
       // Tab 插入两个空格，而不是把焦点跳走
       if (event.key !== "Tab") return;
@@ -842,6 +863,9 @@
       keyButton.textContent = recording ? "按下组合键…" : bossKeyCombo();
       keyButton.classList.toggle("cv-key--recording", recording);
       keyHint.textContent = recording ? "正在录制：按下组合键（Esc 取消）" : keyDefaultHint;
+      // 「只有老板键能进游戏」这句里也带上当前热键，改完立刻同步
+      var modeKey = panel.querySelector("#cv-mode-key");
+      if (modeKey) modeKey.textContent = bossKeyCombo();
     }
 
     keyButton.addEventListener("click", function () {
@@ -851,20 +875,15 @@
 
     renderKeyButton();
     panel.querySelector("#cv-blur").checked = hideOnBlurEnabled();
-    panel.querySelector("#cv-keep").checked = keepCoverOnFocusEnabled();
     panel.querySelector("#cv-start").checked = coverOnStartEnabled();
+    var modeKeyEl = panel.querySelector("#cv-mode-key");
+    if (modeKeyEl) modeKeyEl.textContent = bossKeyCombo();
 
     panel.querySelector("#cv-blur").addEventListener("change", function (event) {
       writePref(COVER_BLUR_SETTING, event.target.checked ? "1" : "0");
     });
-    panel.querySelector("#cv-keep").addEventListener("change", function (event) {
-      writePref(COVER_KEEP_ON_FOCUS_SETTING, event.target.checked ? "1" : "0");
-    });
     panel.querySelector("#cv-start").addEventListener("change", function (event) {
       writePref(COVER_ON_START_SETTING, event.target.checked ? "1" : "0");
-    });
-    panel.querySelector("#cv-play").addEventListener("click", function () {
-      hideCover();
     });
 
     root.querySelector("#cv-gear").addEventListener("click", function (event) {
@@ -874,7 +893,6 @@
         recording = false;
         renderKeyButton();
         panel.querySelector("#cv-blur").checked = hideOnBlurEnabled();
-        panel.querySelector("#cv-keep").checked = keepCoverOnFocusEnabled();
         panel.querySelector("#cv-start").checked = coverOnStartEnabled();
       }
     });
@@ -1008,28 +1026,27 @@
     );
   });
 
-  // 失焦 → 伪装；回到前台 → 收起（只有因失焦显示的才自动收，热键的不动）。
+  // 失焦 / 切后台 → 显示伪装。
+  // **没有任何"回到前台自动露出游戏"的路径**：露不露出游戏只由老板键决定，
+  // 否则回标签、点一下就把伪装解开了，失去意义（也会出现"闪一下又变回游戏"）。
   window.addEventListener("blur", function () {
     if (hideOnBlurEnabled()) showCover(true);
   });
-  window.addEventListener("focus", function () {
-    if (coverActive && coverByBlur && !keepCoverOnFocusEnabled()) hideCover();
-  });
   document.addEventListener("visibilitychange", function () {
     if (document.hidden && hideOnBlurEnabled()) showCover(true);
-    else if (!document.hidden && coverActive && coverByBlur && !keepCoverOnFocusEnabled()) hideCover();
   });
 
-  /* 兜底：有些宿主（切 DBX 标签、切窗口）不会给 iframe 派 blur，
-   * 只靠事件会漏。这里轮询 document.hasFocus()，只要"曾经拿过焦点、现在丢了"
-   * 就弹伪装。曾经拿过焦点这个前提很重要：否则刚打开还没点过就会一直弹。 */
+  /* 兜底：有些宿主（切 DBX 标签、切窗口）不会给 iframe 派 blur，只靠事件会漏。
+   * 这里轮询 document.hasFocus()，但**只负责弹、不负责收**：
+   *   - 只靠轮询判断"该收了"会来回抖（blur 之后 hasFocus 有时仍为 true），
+   *     画面就在游戏与伪装之间闪；收起一律交给真正的 focus 事件。
+   *   - "曾经拿过焦点"这个前提不能省：否则刚打开还没点过就会一直弹。 */
   var sawFocus = document.hasFocus() && !document.hidden;
   window.setInterval(function () {
     if (!hideOnBlurEnabled()) return;
     var focused = document.hasFocus() && !document.hidden;
     if (focused) {
       sawFocus = true;
-      if (coverActive && coverByBlur && !keepCoverOnFocusEnabled()) hideCover();
       return;
     }
     if (sawFocus && !coverActive) showCover(true);
@@ -1104,6 +1121,11 @@
       '<button id="relay-stop" style="flex:1;padding:6px;border-radius:6px;border:1px solid #3f3f46;background:#27272a;color:#e4e4e7;cursor:pointer">停止</button>' +
       "</div>" +
       '<div id="relay-qr-box" style="display:none;text-align:center;margin:8px 0"></div>' +
+      '<div id="relay-room" style="display:none;align-items:center;gap:6px;margin-bottom:6px">' +
+      '<span style="color:#71717a">房间码</span>' +
+      '<span id="relay-room-code" style="font-family:ui-monospace,Consolas,monospace;font-size:15px;font-weight:700;letter-spacing:2px;color:#fbbf24"></span>' +
+      '<button id="relay-room-copy" style="margin-left:auto;padding:2px 8px;border-radius:5px;border:1px solid #3f3f46;background:#27272a;color:#e4e4e7;font-size:11px;cursor:pointer">复制</button>' +
+      "</div>" +
       '<div id="relay-share" style="display:none;align-items:center;gap:6px;margin-bottom:6px">' +
       '<span id="relay-share-url" style="flex:1;font-family:ui-monospace,Consolas,monospace;font-size:11px;color:#93c5fd;word-break:break-all"></span>' +
       '<button id="relay-copy" style="padding:3px 8px;border-radius:5px;border:1px solid #3f3f46;background:#27272a;color:#e4e4e7;font-size:11px;cursor:pointer">复制</button>' +
@@ -1117,6 +1139,47 @@
 
     var statusEl = panel.querySelector("#relay-status");
     var urlsEl = panel.querySelector("#relay-urls");
+
+    // 房间码：游戏菜单里创建房间后，把码同步到面板上，房主不用来回切界面
+    var roomRow = panel.querySelector("#relay-room");
+    var roomCodeEl = panel.querySelector("#relay-room-code");
+    var lastRoomCode = null;
+    function refreshRoomCode() {
+      var box = document.getElementById("lan-box");
+      var code = null;
+      if (box) {
+        var matched = (box.textContent || "").match(/房间码\s*([A-Z0-9]{4})/);
+        if (matched) code = matched[1];
+      }
+      if (code === lastRoomCode) return;
+      lastRoomCode = code;
+      if (!roomRow) return;
+      if (code) {
+        roomRow.style.display = "flex";
+        roomCodeEl.textContent = code;
+      } else {
+        roomRow.style.display = "none";
+        roomCodeEl.textContent = "";
+      }
+    }
+    window.setInterval(refreshRoomCode, 800);
+    refreshRoomCode();
+    var roomCopy = panel.querySelector("#relay-room-copy");
+    if (roomCopy) {
+      roomCopy.addEventListener("click", function () {
+        var text = roomCodeEl ? roomCodeEl.textContent : "";
+        if (!text) return;
+        try {
+          if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text);
+          roomCopy.textContent = "已复制";
+          window.setTimeout(function () {
+            roomCopy.textContent = "复制";
+          }, 1500);
+        } catch (error) {
+          /* 剪贴板不可用时忽略 */
+        }
+      });
+    }
 
     function render(status) {
       if (!status) return;
@@ -1143,13 +1206,13 @@
           shareUrlEl.textContent = status.shareUrl;
         }
         if (status.reachable === false) {
-          statusEl.textContent = base + "（本机连不上）";
+          statusEl.textContent = base;
           statusEl.style.color = "#fbbf24";
           urlsEl.innerHTML =
             (status.urls || []).join("<br>") +
             '<div style="margin-top:8px;color:#fbbf24;font-family:system-ui,sans-serif;line-height:1.6">' +
-            "Windows 防火墙拦住了这个程序：端口已经在监听，但其它设备（甚至本机）都连不上。<br>" +
-            "请到「Windows 安全中心 → 防火墙和网络保护 → 允许应用通过防火墙」，勾选 DBX（或该插件进程），然后点下面重新自检。" +
+            "自检（仅供参考）：在这个进程里连自己的端口没有成功——可能是防火墙拦截，也可能只是自检的局限。<b>以手机能否打开为准</b>。<br>" +
+            "如果手机也打不开：到「Windows 安全中心 → 防火墙和网络保护 → 允许应用通过防火墙」勾选 DBX（或该插件进程），再点下面重新自检。" +
             "</div>" +
             '<button id="relay-retry" style="margin-top:8px;padding:5px 10px;border-radius:6px;border:1px solid #3f3f46;background:#27272a;color:#e4e4e7;cursor:pointer">重新自检</button>';
           var retry = urlsEl.querySelector("#relay-retry");
@@ -1167,7 +1230,9 @@
         } else {
           statusEl.textContent = base;
           statusEl.style.color = "#86efac";
-          urlsEl.innerHTML = (status.urls || []).join("<br>");
+          urlsEl.innerHTML =
+            (status.urls || []).join("<br>") +
+            '<div style="margin-top:6px;color:#52525b;font-size:11px">自检：本机可连（仅供参考，以手机能否打开为准）</div>';
         }
       } else {
         statusEl.textContent = "中继未启动";

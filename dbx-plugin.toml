@@ -5,7 +5,7 @@ schema_version = 1
 [backend]
 language = "rust"
 directory = "backend"
-binary = "dbx-plugin-gongfawar"
+binary = "dbx-plugin-xingxi-game"
 
 [package]
 include = ["assets", "ui", "LICENSE"]

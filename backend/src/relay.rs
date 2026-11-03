@@ -39,6 +39,10 @@ struct Client {
     sink: Sink,
     /// 下行消息队列：插件 UI 用轮询取走（事件通道在部分宿主上不可靠）
     queue: std::collections::VecDeque<String>,
+    /// 队列溢出过：指令已经可能丢了，只能断开让它重连（锁步不能带着缺口继续跑）
+    overflowed: bool,
+    /// 最近一分钟内的 join 尝试时间戳（限流用）
+    join_attempts: Vec<std::time::Instant>,
     connected: bool,
 }
 
@@ -68,6 +72,12 @@ pub struct Hub {
 
 const CHARS: &[u8] = b"ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
+/// 单个客户端最多积压多少条下行消息；超了就断开（见 flush）。
+const QUEUE_LIMIT: usize = 256;
+
+/// 同一个连接每分钟最多发起几次 join（房间码只有 4 位，防暴力枚举）。
+const JOIN_LIMIT_PER_MINUTE: usize = 5;
+
 impl Hub {
     pub fn new() -> Self {
         Self {
@@ -90,6 +100,8 @@ impl Hub {
                 seat: -1,
                 sink,
                 queue: std::collections::VecDeque::new(),
+                overflowed: false,
+                join_attempts: Vec::new(),
                 connected: true,
             },
         );
@@ -135,23 +147,43 @@ impl Hub {
     fn flush(&mut self, out: Vec<(String, Value)>) {
         for (client_id, message) in out {
             if let Some(client) = self.clients.get_mut(&client_id) {
+                // 队列满了说明这个端已经跟不上（或干脆不再轮询）。
+                // 锁步最怕"少一条指令"：宁可断开让它重连追平，也不能静默丢帧。
+                if client.queue.len() >= QUEUE_LIMIT {
+                    let text = json!({
+                        "t": "error",
+                        "message": "中继消息积压过多，连接已断开，请重新加入房间",
+                        "fatal": true
+                    })
+                    .to_string();
+                    client.queue.clear();
+                    client.queue.push_back(text.clone());
+                    client.overflowed = true;
+                    client.sink.send(&text);
+                    continue;
+                }
                 let text = message.to_string();
                 client.queue.push_back(text.clone());
-                // 队列有上限：万一 UI 不再轮询，别把内存吃光
-                while client.queue.len() > 256 {
-                    client.queue.pop_front();
-                }
                 client.sink.send(&text);
             }
         }
     }
 
     /// 取走该客户端排队的下行消息（插件 UI 的轮询入口）。
-    pub fn poll(&mut self, id: &str) -> Vec<String> {
-        match self.clients.get_mut(id) {
-            Some(client) => client.queue.drain(..).collect(),
-            None => Vec::new(),
+    ///
+    /// 返回 `(消息, 连接是否仍可用)`。连接因积压被断开时，最后一批消息里带
+    /// `fatal` 标记，之后本轮询会让调用方关掉 socket（而不是安静地一直空转）。
+    pub fn poll(&mut self, id: &str) -> (Vec<String>, bool) {
+        let (messages, overflowed) = match self.clients.get_mut(id) {
+            Some(client) => (client.queue.drain(..).collect::<Vec<String>>(), client.overflowed),
+            None => return (Vec::new(), false),
+        };
+        if overflowed {
+            // 把"断开"这件事走一遍正常离场流程：别的玩家能看到它掉线
+            self.unregister(id);
+            return (messages, false);
         }
+        (messages, true)
     }
 
     /// 处理一条客户端消息（JSON 文本）。
@@ -210,6 +242,21 @@ impl Hub {
                 return;
             }
             "join" => {
+                // 限流：房间码 4 位，不限制的话局域网内可以刷枚举
+                let now = std::time::Instant::now();
+                if let Some(client) = self.clients.get_mut(id) {
+                    client
+                        .join_attempts
+                        .retain(|at| now.duration_since(*at).as_secs() < 60);
+                    if client.join_attempts.len() >= JOIN_LIMIT_PER_MINUTE {
+                        self.reply(
+                            id,
+                            json!({ "t": "error", "message": "加入尝试过于频繁，请等一分钟再试" }),
+                        );
+                        return;
+                    }
+                    client.join_attempts.push(now);
+                }
                 let code = message
                     .get("code")
                     .and_then(Value::as_str)
@@ -471,6 +518,54 @@ mod tests {
         assert!(msgs.iter().any(|m| m["t"] == "error" && m["message"] == "尚未加入房间"));
     }
 
+    #[test]
+    fn queue_overflow_disconnects_instead_of_dropping() {
+        let hub = shared();
+        let host = connect(&hub, "host");
+        let guest = connect(&hub, "guest");
+        hub.lock().unwrap().handle("host", r#"{"t":"create"}"#);
+        {
+            let mut guard = hub.lock().unwrap();
+            let code = guard.rooms.keys().next().unwrap().clone();
+            guard.handle("guest", &format!(r#"{{"t":"join","code":"{code}"}}"#));
+            guard.handle("host", r#"{"t":"begin","seed":1,"config":{},"seats":[0,1]}"#);
+            // 房主一直不轮询，让队列故意溢出
+            for i in 0..(QUEUE_LIMIT + 5) {
+                guard.handle("guest", &format!(r#"{{"t":"act","cmd":{{"n":{i}}}}}"#));
+            }
+        }
+        let (messages, connected) = hub.lock().unwrap().poll("host");
+        assert!(!connected, "溢出后应报告连接不可用");
+        assert!(
+            messages.iter().any(|m| m.contains("fatal")),
+            "最后一条消息应该是 fatal 提示，而不是安静地丢掉指令"
+        );
+        // 断开的连接不再占用席位
+        let peers = hub.lock().unwrap().rooms.values().next().unwrap().peers.len();
+        assert_eq!(peers, 2, "席位本身应保留（重连可以顶回来）");
+    }
+
+    #[test]
+    fn join_is_rate_limited_per_minute() {
+        let hub = shared();
+        let mut guest = connect(&hub, "guest");
+        hub.lock().unwrap().handle("host", r#"{"t":"create"}"#);
+        let code = hub.lock().unwrap().rooms.keys().next().unwrap().clone();
+        let mut saw_rate_limit = false;
+        for _ in 0..(JOIN_LIMIT_PER_MINUTE + 2) {
+            hub.lock()
+                .unwrap()
+                .handle("guest", &format!(r#"{{"t":"join","code":"{code}"}}"#));
+        }
+        for message in take(&mut guest) {
+            if message["t"] == "error"
+                && message["message"].as_str().unwrap_or("").contains("频繁")
+            {
+                saw_rate_limit = true;
+            }
+        }
+        assert!(saw_rate_limit, "超过每分钟上限应返回限流错误");
+    }
     #[test]
     fn unknown_room_reports_error() {
         let hub = shared();

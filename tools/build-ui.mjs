@@ -38,6 +38,8 @@ for (const name of ["sw.js", "manifest.webmanifest"]) {
 
 // 3) 注入适配层：必须在主脚本之前执行
 copyFileSync(shimSource, join(uiDir, "plugin-shim.js"));
+// 标签页图标：和插件图标保持一致（原来是游戏自带的 ⚔️ emoji）
+copyFileSync(join(pluginRoot, "assets", "icon.svg"), join(uiDir, "icon.svg"));
 const indexPath = join(uiDir, "index.html");
 let html = readFileSync(indexPath, "utf8");
 html = html.replace(/\s*<link rel="manifest"[^>]*>/g, "");
@@ -46,6 +48,13 @@ html = html.replace(/\s*<link rel="apple-touch-icon"[^>]*>/g, "");
 html = html.replace(/<title>[^<]*<\/title>/, "<title>AggressiveWar</title>");
 html = html.replace(/(<meta name="apple-mobile-web-app-title" content=")[^"]*(")/, "$1AggressiveWar$2");
 html = html.replace(/(<meta name="description" content=")[^"]*(")/, "$1AggressiveWar$2");
+// favicon：换成插件图标。游戏模板里是一个带 emoji 的 data URL（内含 ">"），
+// 正则截不干净，所以按行删掉所有 rel="icon" 的行，再插一条新的。
+html = html
+  .split(/\r?\n/)
+  .filter((line) => !line.includes('rel="icon"'))
+  .join("\n");
+html = html.replace("</head>", '  <link rel="icon" type="image/svg+xml" href="./icon.svg" />\n  </head>');
 if (!html.includes("plugin-shim.js")) {
   // 放在 </head> 前：比 <script type="module"> 早执行（module 默认 defer）
   html = html.replace(/(<script type="module")/, '    <script src="./plugin-shim.js"></script>\n  $1');

@@ -4,6 +4,7 @@ pub static ASSETS: &[(&str, &[u8])] = &[
     ("/assets/index-DaB20_zY.css", include_bytes!("../../ui/assets/index-DaB20_zY.css") as &[u8]),
     ("/icon-192.png", include_bytes!("../../ui/icon-192.png") as &[u8]),
     ("/icon-512.png", include_bytes!("../../ui/icon-512.png") as &[u8]),
+    ("/icon.svg", include_bytes!("../../ui/icon.svg") as &[u8]),
     ("/index.html", include_bytes!("../../ui/index.html") as &[u8]),
     ("/plugin-shim.js", include_bytes!("../../ui/plugin-shim.js") as &[u8]),
 ];

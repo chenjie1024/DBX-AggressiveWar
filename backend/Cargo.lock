@@ -15,8 +15,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc652a48c352aef3ea3aed32080501cf3ef6ed5da78602a020c991775b0aff04"
 
 [[package]]
-name = "dbx-plugin-gongfawar"
-version = "0.5.2"
+name = "dbx-plugin-sdk"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "dbx-plugin-xingxi-game"
+version = "0.6.1"
 dependencies = [
  "bytes",
  "dbx-plugin-sdk",
@@ -28,14 +36,6 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
-]
-
-[[package]]
-name = "dbx-plugin-sdk"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
 ]
 
 [[package]]
