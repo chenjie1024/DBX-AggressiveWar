@@ -233,8 +233,7 @@ fn main() -> std::io::Result<()> {
         std::process::exit(if ok { 0 } else { 1 });
     }
 
-    let metadata = PluginMetadata::new("com.gongfawar.game", env!("CARGO_PKG_VERSION"))
-        .with_capability("workbench")
-        .with_capability("events");
+    let metadata = PluginMetadata::new("com.xingxi.game", env!("CARGO_PKG_VERSION"))
+        .with_capability("workbench");
     PluginServer::new(metadata, Plugin).serve()
 }

@@ -7,12 +7,12 @@
 
 | | |
 |---|---|
-| 插件 id | `com.gongfawar.game` |
+| 插件 id | `com.xingxi.game` |
 | 版本 | 0.5.0 |
 | 平台 | Windows x64（含 Rust sidecar） |
 | 要求 | DBX ≥ 0.6.0 |
 | 权限 | 仅 `host.storage` |
-| 安装包 | 约 470 KB |
+| 安装包 | 约 470 KB（解包约 1.0 MB） |
 
 ---
 
@@ -100,7 +100,7 @@
 ### 普通用户（推荐）
 
 1. 到 [Releases](https://github.com/chenjie1024/DBX-AggressiveWar/releases) 下载
-   `com.gongfawar.game-<版本>-windows-x64.dbxp`
+   `com.xingxi.game-<版本>-windows-x64.dbxp`
 2. DBX → 插件中心 → 「安装本地包」选择该文件
 3. 如果是未签名开发包，先在设置里打开「允许安装未签名开发包」
 4. 装好后在插件列表里找到 **AggressiveWar**，点开即可
@@ -108,7 +108,7 @@
 ### 用 CLI 安装
 
 ```bash
-dbx-plugin install ./com.gongfawar.game-0.5.0-windows-x64.dbxp
+dbx-plugin install ./com.xingxi.game-0.5.0-windows-x64.dbxp
 ```
 
 ### 从源码构建
@@ -129,7 +129,7 @@ cargo build --release --manifest-path backend/Cargo.toml
 
 # 3) 打包
 dbx-plugin package .
-# 产物：dist/com.gongfawar.game-<版本>-windows-x64.dbxp
+# 产物：dist/com.xingxi.game-<版本>-windows-x64.dbxp
 ```
 
 本地调试：
@@ -183,7 +183,7 @@ dbx-plugin dev --path . --port 5195
 ### 关于数据与权限
 
 - 只申请 `host.storage` 一个权限；没有网络、文件系统、剪贴板、进程权限。
-- 存档 / 设置 / 成就存在 DBX 的插件数据目录（`plugin-data/com.gongfawar.game`），卸载时由 DBX 清理。
+- 存档 / 设置 / 成就存在 DBX 的插件数据目录（`plugin-data/com.xingxi.game`），卸载时由 DBX 清理。
 - 当前版本只有一个**自动存档槽**：手动「保存」会覆盖上一次，没有多槽位与导出（在计划中）。
 
 ### 关于平台

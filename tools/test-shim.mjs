@@ -11,12 +11,40 @@ import vm from "node:vm";
 const here = dirname(fileURLToPath(import.meta.url));
 const shimSource = readFileSync(resolve(here, "..", "ui-src", "plugin-shim.js"), "utf8");
 
+// 假 DOM：适配层会在启动时构建伪装层，所以这些节点方法都得有。
+// 只实现到"不会炸"的程度，不模拟真实渲染。
+function stubNode() {
+  const node = {
+    style: {},
+    classList: { add() {}, remove() {}, toggle() {}, contains: () => false },
+    value: "",
+    textContent: "",
+    innerHTML: "",
+    hidden: true,
+    scrollTop: 0,
+    scrollLeft: 0,
+    appendChild() {},
+    addEventListener() {},
+    removeEventListener() {},
+    remove() {},
+    setAttribute() {},
+    focus() {},
+    contains: () => false,
+    getBoundingClientRect: () => ({ width: 0, height: 0, top: 0, left: 0, bottom: 0, right: 0 }),
+    querySelector: () => stubNode(),
+    querySelectorAll: () => []
+  };
+  return node;
+}
+
 function makeEnv({ stored = null, withStorage = true } = {}) {
   const writes = [];
   const listeners = {};
   const window = {
     setTimeout,
     clearTimeout,
+    setInterval: () => 0,
+    clearInterval: () => {},
     Promise,
     console,
     dbxPlugin: withStorage
@@ -31,16 +59,25 @@ function makeEnv({ stored = null, withStorage = true } = {}) {
         }
       : undefined
   };
-  window.addEventListener = (name, fn) => { listeners["window:" + name] = fn; };
+  window.addEventListener = (name, fn) => {
+    listeners["window:" + name] = fn;
+  };
   const document = {
     hidden: false,
+    readyState: "complete",
+    hasFocus: () => false,
     addEventListener: (name, fn) => {
       listeners[name] = fn;
     },
-    createElement: () => ({ style: {}, remove() {}, textContent: "" }),
-    body: { appendChild() {} }
+    createElement: () => stubNode(),
+    getElementById: () => stubNode(),
+    querySelector: () => stubNode(),
+    querySelectorAll: () => [],
+    body: stubNode(),
+    head: stubNode(),
+    title: ""
   };
-  const sandbox = { window, document, console, setTimeout, clearTimeout, Promise };
+  const sandbox = { window, document, console, setTimeout, clearTimeout, Promise, navigator: {} };
   sandbox.globalThis = sandbox;
   vm.createContext(sandbox);
   vm.runInContext(shimSource, sandbox);

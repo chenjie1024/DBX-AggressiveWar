@@ -358,19 +358,8 @@
     window.WebSocket = RelayWebSocket;
   }
 
-  // 插件内：把宿主推来的 lan/message 分发给对应的虚拟连接
-  if (PLUGIN && typeof PLUGIN.onEvent === "function") {
-    try {
-      PLUGIN.onEvent(function (event) {
-        if (!event || event.method !== "lan/message") return;
-        var payload = event.params || {};
-        var socket = relaySockets[payload.id];
-        if (socket && socket.onmessage) socket.onmessage({ data: payload.data });
-      });
-    } catch (error) {
-      /* 订阅失败：联机不可用，单机不受影响 */
-    }
-  }
+  // 注：联机的下行消息只走 lan/poll 轮询，不用宿主事件 —— 事件通道在部分宿主上会静默丢弃，
+  // 而且 manifest 并没有声明 host.events。留着这条死路径只会误导后来的人。
   showBanner();
 
   /* ═══════════════════════════════════════════════════════════════════════

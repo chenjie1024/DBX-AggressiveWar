@@ -1,6 +1,6 @@
 // 由 tools/gen-assets.mjs 生成，请勿手改。
 pub static ASSETS: &[(&str, &[u8])] = &[
-    ("/assets/index-BWTopMjj.js", include_bytes!("../../ui/assets/index-BWTopMjj.js") as &[u8]),
+    ("/assets/index-Cax2MEnV.js", include_bytes!("../../ui/assets/index-Cax2MEnV.js") as &[u8]),
     ("/assets/index-DaB20_zY.css", include_bytes!("../../ui/assets/index-DaB20_zY.css") as &[u8]),
     ("/icon-192.png", include_bytes!("../../ui/icon-192.png") as &[u8]),
     ("/icon-512.png", include_bytes!("../../ui/icon-512.png") as &[u8]),

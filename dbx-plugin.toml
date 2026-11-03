@@ -8,4 +8,4 @@ directory = "backend"
 binary = "dbx-plugin-gongfawar"
 
 [package]
-include = ["assets", "ui"]
+include = ["assets", "ui", "LICENSE"]
